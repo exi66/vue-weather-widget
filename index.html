@@ -138,7 +138,7 @@
             const success = (position) => {
                 this.position = position;
                 axios
-                .get(`http://api.worldweatheronline.com/premium/v1/weather.ashx?key=${key}&q=${this.position.coords.latitude},${this.position.coords.longitude}&format=json&lang=${this.lang}`)
+                .get(`${location.protocol}//api.worldweatheronline.com/premium/v1/weather.ashx?key=${key}&q=${this.position.coords.latitude},${this.position.coords.longitude}&format=json&lang=${this.lang}`)
                 .then(response => {
                     this.current = response.data.data.current_condition[0];
                     this.weather = response.data.data.weather;
