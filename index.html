@@ -1,0 +1,238 @@
+<script src="https://unpkg.com/vue@3"></script>
+<script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+<style>
+    .selected {
+        background: rgba(0, 0, 0, .15);
+    }
+</style>
+
+<div id="app" class="container">
+    <section v-if="errored">
+        <p>We're sorry, we're not able to retrieve this information at the moment, please try back later</p>
+    </section>
+    <section v-else>
+        <div v-if="loading">Loading...</div>
+        <div v-else>
+            <info ref="info"></info>
+            <canvas class="mt-5" id="myChart" width="100" height="150px"></canvas>
+            <img @load="renderChart()" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" width="0" height="0" alt="" />         
+            <div class="container-fluid mt-2">
+                <div class="row d-flex justify-content-center">
+                    <div class="col-1 rounded" type="button" v-for="n in 12" v-on:click="changeDay(n-1)" :class="this.active == n-1 ? 'selected': ''">
+                        <div class="row">
+                            <div class="col-12 text-center">{{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][new Date(this.weather[n-1].date).getDay()]}}</div>
+                            <div class="col-12">
+                                <img class="mx-auto d-block" style="width: 100%; height: auto; max-width: 64px;" :src="n-1 == 0 ? this.current.weatherIconUrl[0].value : this.weather[n-1].hourly[4].weatherIconUrl[0].value" :alt="n-1 == 0 ? this.current.weatherDesc[0].value : this.weather[n-1].hourly[4].weatherDesc[0].value">
+                            </div>
+                            <div class="col-12 text-center">
+                                <span>
+                                    {{ this.celsius ? this.weather[n-1].maxtempC == '-0' ? '0' : this.weather[n-1].maxtempC : this.weather[n-1].maxtempF }}°                               
+                                </span>
+                                <span class="text-muted">
+                                    {{ this.celsius ? this.weather[n-1].mintempC == '-0' ? '0' : this.weather[n-1].mintempC : this.weather[n-1].mintempF }}°  
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+
+<script>
+    Chart.register(ChartDataLabels);
+    Chart.defaults.font.size = '16';
+    const key = '8c30c330357f485e9e6102807220303';
+    let chart;
+    const app = Vue.createApp({
+        data() {
+            return {
+                weather: [],
+                current: {},
+                chartdata: [[], [], [], [], []],
+                active: 0,
+                active_y: 0,
+                celsius: true,
+                position: null,
+                errored: false,
+                loading: true
+            };
+        },
+        methods: { 
+            changeDay: function(i) {
+                this.$refs.info.d = this.weather[i];
+                this.$refs.info.current = new Date().toISOString().slice(0, 10) == new Date(this.weather[i].date).toISOString().slice(0, 10);
+                this.active = i;
+                this.editChart(i, this.active_y);
+            },
+            editChart: function(i, j) {
+                j = this.celsius && (j == 0 || j == 1) ? 0:1;
+                chart.data.datasets.pop();
+                chart.data.datasets.push({
+                    data: this.chartdata[j][i],
+                    borderWidth: 2,
+                    borderColor: 'rgba(255, 204, 0, 1)',
+                    backgroundColor: 'rgba(255, 204, 0, .2)'
+                });
+                chart.update();
+            },
+            changeUnit: function(flag) {
+                this.celsius = flag;
+                this.editChart(this.active, this.active_y);
+            },
+            renderChart: function() {
+                const ctx = document.getElementById('myChart').getContext('2d');
+                chart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: ['0:00', '3:00', '6:00', '9:00', '12:00', '15:00', '18:00', '21:00'],
+                        datasets: [{
+                            data: this.chartdata[0][0],
+                            borderWidth: 2,
+                            borderColor: 'rgba(255, 204, 0, 1)',
+                            backgroundColor: 'rgba(255, 204, 0, .2)'
+                        }]
+                    },
+                    options: {
+                        layout: {
+                            padding: {
+                                top: 30
+                            }
+                        },                        
+                        scales: {
+                            x: {
+                                grid: {
+                                    display: false
+                                }
+                            },
+                            y: {
+                                grid: {
+                                    display: false
+                                },
+                                ticks: {
+                                    display: false
+                                }                                
+                            }                            
+                        },                                               
+                        plugins: {
+                            datalabels: {
+                                anchor: 'end',
+                                align: 'end'
+                            },                             
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                enabled: false
+                            }                           
+                        }                    
+                    }
+                });
+            }             
+        },
+        created() {
+            const success = (position) => {
+                this.position = position;
+                axios
+                .get(`http://api.worldweatheronline.com/premium/v1/weather.ashx?key=${key}&q=${this.position.coords.latitude},${this.position.coords.longitude}&format=json&lang=${this.lang}`)
+                .then(response => {
+                    this.current = response.data.data.current_condition[0];
+                    this.weather = response.data.data.weather;
+                    for (let w of this.weather) {
+                        let localtemp = [];
+                        let localtempF = [];
+                        let localwind = [];
+                        let localwinddegree = [];
+                        let localchanceofrain = [];
+                        for (let h of w.hourly) {
+                            localtemp.push(h.tempC == '-0' ? '0' : h.tempC);
+                            localtempF.push(h.tempF == '-0' ? '0' : h.tempF);
+                            localwind.push(h.windspeedKmph);
+                            localwinddegree.push(h.winddirDegree);
+                            localchanceofrain.push(h.chanceofrain);
+                        }
+                        this.chartdata[0].push(localtemp);
+                        this.chartdata[1].push(localtempF);
+                        this.chartdata[2].push(localwind);
+                        this.chartdata[3].push(localwinddegree);
+                        this.chartdata[4].push(localchanceofrain);
+                    }                  
+                })
+                .catch(error => {
+                    console.log(error);
+                    this.errored = true;
+                })
+                .finally(() => (this.loading = false));
+            };
+
+            const error = (err) => {
+                console.log(error)
+                this.errored = true;
+                this.loading = false;
+            };
+            navigator.geolocation.getCurrentPosition(success, error);
+        },                
+        mounted() {
+
+        }       
+    });
+
+    app.component('info', {
+        template: 
+        `<div class="row p-4">
+            <div class="col-6">
+                <div class="row">
+                    <div class="col-auto m-0 p-0 my-auto">
+                        <img style="width: 100%; height: auto;" :src="current ? this.$parent.current.weatherIconUrl[0].value : d.hourly[4].weatherIconUrl[0].value" :alt="current ? this.$parent.current.weatherDesc[0].value : d.hourly[4].weatherDesc[0].value">
+                    </div>
+                    <div class="col-auto my-auto">
+                        <h4 style="font-size: 3.3rem" class="m-0">
+                                {{ current ? 
+                                    this.$parent.celsius ? 
+                                        this.$parent.current.temp_C == '-0' ?
+                                            '0' : this.$parent.current.temp_C 
+                                    : this.$parent.current.temp_F 
+                                : this.$parent.celsius ? 
+                                    d.avgtempC == '-0' ?
+                                        '0' : d.avgtempC
+                                    : d.avgtempF 
+                                }}<sup style="font-size: 1ch;">
+                                <span type="button" class="me-1" :class="this.$parent.celsius ? '' : 'text-muted'" @click="this.$parent.changeUnit(true)">°C</span>
+                                <span class="border-end"></span>
+                                <span type="button" class="ms-1" :class="this.$parent.celsius ? 'text-muted' : ''" @click="this.$parent.changeUnit(false)">°F</span>
+                            </sup>
+                        </h4>
+                    </div>
+                    <div class="col-6 my-auto">
+                        <p class="text-muted m-0">
+                            Humidity: {{ current ? this.$parent.current.humidity : d.hourly[4].humidity }}% <br>
+                            Wind: {{ current ? (this.$parent.current.windspeedKmph/3.6).toFixed(1) : (d.hourly[4].windspeedKmph/3.6).toFixed(1) }} m/s
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 text-end">
+                <h3><a :href="'http://maps.google.com/maps?q='+this.$parent.position.coords.latitude+','+this.$parent.position.coords.longitude">{{(this.$parent.position.coords.latitude)}}, {{(this.$parent.position.coords.longitude)}}</a></h3>
+                <span>
+                    {{['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date(d.date).getDay()]}}<br>
+                    {{ current ? this.$parent.current.weatherDesc[0].value.charAt(0).toUpperCase() + this.$parent.current.weatherDesc[0].value.slice(1).toLowerCase() : d.hourly[4].weatherDesc[0].value }}
+                </span>
+            </div>
+        </div>`,
+        data() {
+            return {
+                d: this.$parent.weather[0],
+                current: false
+            }
+        },
+        created() {
+            this.current = new Date().toISOString().slice(0, 10) == new Date(this.d.date).toISOString().slice(0, 10);
+        }
+    });
+
+    app.mount('#app');
+</script>
